@@ -6,81 +6,71 @@
   <title>Scanner de Pacotes</title>
   <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
   <style>
-    /* Seus estilos CSS aqui */
+    body { text-align:center; font-family: Arial, sans-serif; }
+    #reader { width: 320px; margin: auto; }
+    #resultado { margin-top: 15px; font-size: 20px; font-weight: bold; }
+    .ok { color: green; }
+    .erro { color: red; }
   </style>
 </head>
 <body>
   <h2>Scanner de Pacotes</h2>
-  <div id="reader" style="width: 300px; margin: auto;"></div>
+  <div id="reader"></div>
   <div id="resultado">Aguardando leitura...</div>
-  <div id="errorMsg" style="color: red;"></div>
+  <div id="msg" style="color:red;"></div>
 
   <script>
-    const idsValidos = [ /* seus IDs aqui */ ];
-    const resultadoDiv = document.getElementById("resultado");
-    const errorMsgDiv = document.getElementById("errorMsg");
+    const idsValidos = [
+      "45521630151","45527442396","45527911927","45528191622",
+      "45528811304","45528961246","45529519903","45529519921",
+      "45529909862","45530728317","45530892544","45531849631",
+      "45533653636","45534947657"
+    ];
 
-    function verificarCodigo(decodedText) {
-      if (idsValidos.includes(decodedText)) {
-        resultadoDiv.innerText = "✅ Pacote encontrado: " + decodedText;
+    const resultadoDiv = document.getElementById("resultado");
+    const msgDiv = document.getElementById("msg");
+    let scanner = null;
+
+    function verificarCodigo(code) {
+      if (idsValidos.includes(code)) {
+        resultadoDiv.innerText = "✅ Encontrado: " + code;
         resultadoDiv.className = "ok";
-        // Emitir bip de sucesso
-        playBeepSound();
       } else {
-        resultadoDiv.innerText = "❌ Não encontrado: " + decodedText;
+        resultadoDiv.innerText = "❌ Não encontrado: " + code;
         resultadoDiv.className = "erro";
       }
     }
 
-    function playBeepSound() {
-      // Implementação simples de um bip
-      const context = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = context.createOscillator();
-      oscillator.connect(context.destination);
-      oscillator.frequency.value = 800;
-      oscillator.start();
-      oscillator.stop(context.currentTime + 0.1);
-    }
+    function startScanner(cameraId = null) {
+      scanner = new Html5Qrcode("reader");
+      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
-    // Função para inicializar o scanner
-    function initScanner() {
-      // Primeiro, listar as câmeras disponíveis
-      Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) {
-          // Encontrar a câmera traseira (environment)
-          let backCamera = devices.find(device => 
-            device.label.toLowerCase().includes('back') || 
-            device.label.toLowerCase().includes('rear') ||
-            device.label.toLowerCase().includes('environment'));
-          
-          const cameraId = backCamera ? backCamera.id : devices[0].id;
-          
-          const html5QrCode = new Html5Qrcode("reader");
-          const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-          
-          html5QrCode.start(
-            cameraId, 
-            config,
-            verificarCodigo,
-            (errorMessage) => {
-              // Mensagem de erro exibida para o usuário
-              errorMsgDiv.innerText = "Erro na câmera: " + errorMessage;
-            }
-          ).catch(err => {
-            errorMsgDiv.innerText = "Erro ao iniciar câmera: " + err;
-            console.error("Erro ao iniciar câmera: ", err);
-          });
-        } else {
-          throw new Error("Nenhuma câmera encontrada");
-        }
-      }).catch(err => {
-        errorMsgDiv.innerText = "Erro ao acessar câmeras: " + err;
-        console.error("Erro ao acessar câmeras: ", err);
+      scanner.start(
+        cameraId ? cameraId : { facingMode: "environment" },
+        config,
+        verificarCodigo
+      ).catch(err => {
+        msgDiv.innerText = "Erro ao iniciar câmera: " + err;
+        console.warn(err);
+
+        // fallback: tenta pegar a primeira câmera disponível
+        Html5Qrcode.getCameras().then(devices => {
+          if (devices.length > 0) {
+            msgDiv.innerText = "Tentando outra câmera...";
+            scanner.start(devices[0].id, config, verificarCodigo)
+              .catch(e2 => {
+                msgDiv.innerText = "Falhou: " + e2;
+              });
+          } else {
+            msgDiv.innerText = "Nenhuma câmera encontrada.";
+          }
+        });
       });
     }
 
-    // Iniciar o scanner quando a página carregar
-    document.addEventListener('DOMContentLoaded', initScanner);
+    window.addEventListener("load", () => {
+      startScanner();
+    });
   </script>
 </body>
 </html>
