@@ -1,373 +1,368 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Inventário Pro</title>
-    <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <style>
-        :root {
-            --bg-color: #1a202c;
-            --card-color: #2d3748;
-            --text-color: #e2e8f0;
-            --text-muted-color: #a0aec0;
-            --primary-color: #4299e1;
-            --success-color: #48bb78;
-            --error-color: #f56565;
-            --warning-color: #f6ad55;
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  Camera, 
+  Save, 
+  Trash2, 
+  Play, 
+  Square, 
+  FileText, 
+  Barcode,
+  Check
+} from 'lucide-react';
+
+interface CameraDevice {
+  id: string;
+  label: string;
+}
+
+interface ScannerState {
+  idsToFind: Set<string>;
+  foundIds: Map<string, string>;
+  cameras: CameraDevice[];
+  isScanning: boolean;
+}
+
+export default function InventoryScanner() {
+  const { toast } = useToast();
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const readerRef = useRef<HTMLDivElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const [state, setState] = useState<ScannerState>({
+    idsToFind: new Set(),
+    foundIds: new Map(),
+    cameras: [],
+    isScanning: false,
+  });
+
+  const [idInput, setIdInput] = useState('');
+  const [selectedCamera, setSelectedCamera] = useState<string>('');
+  const [feedback, setFeedback] = useState({ type: 'info', message: 'Aguardando operação...' });
+
+  // Initialize audio context
+  useEffect(() => {
+    audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
+
+  const playBeep = useCallback((type: 'success' | 'error' | 'warning') => {
+    if (!audioContextRef.current) return;
+
+    const oscillator = audioContextRef.current.createOscillator();
+    const gainNode = audioContextRef.current.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContextRef.current.destination);
+    
+    gainNode.gain.setValueAtTime(0.1, audioContextRef.current.currentTime);
+
+    switch (type) {
+      case 'success':
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        break;
+      case 'error':
+        oscillator.frequency.value = 400;
+        oscillator.type = 'triangle';
+        break;
+      case 'warning':
+        oscillator.frequency.value = 600;
+        oscillator.type = 'sawtooth';
+        break;
+    }
+    
+    oscillator.start();
+    oscillator.stop(audioContextRef.current.currentTime + (type === 'error' ? 0.2 : 0.1));
+  }, []);
+
+  // Load state from localStorage
+  useEffect(() => {
+    const savedState = localStorage.getItem('inventoryScannerState');
+    if (savedState) {
+      const parsedState = JSON.parse(savedState);
+      setState(prev => ({
+        ...prev,
+        idsToFind: new Set(parsedState.idsToFind),
+        foundIds: new Map(parsedState.foundIds)
+      }));
+      setIdInput(parsedState.idsToFind.join('\n'));
+    }
+  }, []);
+
+  // Save state to localStorage
+  const saveState = useCallback(() => {
+    const stateToSave = {
+      idsToFind: Array.from(state.idsToFind),
+      foundIds: Array.from(state.foundIds.entries())
+    };
+    localStorage.setItem('inventoryScannerState', JSON.stringify(stateToSave));
+  }, [state.idsToFind, state.foundIds]);
+
+  // Load cameras
+  useEffect(() => {
+    const loadCameras = async () => {
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        setState(prev => ({ ...prev, cameras: devices }));
+        
+        // Try to select back camera
+        const backCamera = devices.find(d => 
+          d.label.toLowerCase().includes('back') || 
+          d.label.toLowerCase().includes('traseira')
+        );
+        if (backCamera) {
+          setSelectedCamera(backCamera.id);
+        } else if (devices.length > 0) {
+          setSelectedCamera(devices[0].id);
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 1rem;
-        }
-        #app-container {
-            max-width: 600px;
-            margin: auto;
-            background-color: var(--card-color);
-            border-radius: 12px;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
-            overflow: hidden;
-        }
-        .header, .section {
-            padding: 1.5rem;
-            border-bottom: 1px solid #4a5568;
-        }
-        .header { text-align: center; }
-        h2 { margin: 0 0 0.5rem 0; font-size: 1.5rem; }
-        label { font-weight: 600; display: block; margin-bottom: 0.5rem; }
-        textarea, select {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #1a202c;
-            border: 1px solid #4a5568;
-            color: var(--text-color);
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            box-sizing: border-box;
-        }
-        textarea { min-height: 100px; resize: vertical; }
-        .button-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-        button {
-            flex-grow: 1;
-            padding: 0.75rem 1rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-        .btn-primary { background-color: var(--primary-color); color: white; }
-        .btn-primary:hover { background-color: #2b6cb0; }
-        .btn-secondary { background-color: #4a5568; color: white; }
-        .btn-secondary:hover { background-color: #718096; }
-        .btn-success { background-color: var(--success-color); color: white; }
-        #reader { width: 100%; border-radius: 8px; overflow: hidden; margin: 1rem 0; aspect-ratio: 1/1; }
-        #feedback {
-            font-size: 1.2rem;
-            font-weight: bold;
-            padding: 1rem;
-            border-radius: 8px;
-            text-align: center;
-            margin-top: 1rem;
-            transition: all 0.3s;
-        }
-        .feedback-success { background-color: var(--success-color); color: white; }
-        .feedback-error { background-color: var(--error-color); color: white; }
-        .feedback-warning { background-color: var(--warning-color); color: black; }
-        #progress-container { margin-bottom: 1rem; }
-        #progress-bar { width: 100%; background-color: #4a5568; border-radius: 8px; overflow: hidden; }
-        #progress-fill { height: 10px; background-color: var(--success-color); width: 0%; transition: width 0.3s; }
-        #found-list-container { max-height: 200px; overflow-y: auto; padding-right: 10px; }
-        #found-list li {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #4a5568;
-        }
-        #found-list li small { color: var(--text-muted-color); }
-    </style>
-</head>
-<body>
-    <div id="app-container">
-        <div class="header">
-            <h2><i class="fa-solid fa-barcode"></i> Scanner de Inventário Pro</h2>
-        </div>
+      } catch (error) {
+        console.error('Error loading cameras:', error);
+        setFeedback({ type: 'error', message: 'Não foi possível acessar as câmeras.' });
+      }
+    };
 
-        <div class="section" id="setup-section">
-            <label for="id-input">Cole os IDs a encontrar (um por linha):</label>
-            <textarea id="id-input" placeholder="ID-PACOTE-001&#10;ID-PACOTE-002"></textarea>
-            <div class="button-group">
-                <button id="save-btn" class="btn-primary"><i class="fa-solid fa-save"></i> Salvar Lista</button>
-                <button id="clear-btn" class="btn-secondary"><i class="fa-solid fa-trash"></i> Limpar Tudo</button>
-            </div>
-        </div>
+    loadCameras();
+  }, []);
 
-        <div class="section" id="scanner-section">
-            <label for="camera-select">Câmera:</label>
-            <select id="camera-select"></select>
-            <div class="button-group">
-                <button id="start-scan-btn" class="btn-primary"><i class="fa-solid fa-camera"></i> Iniciar Scanner</button>
-                <button id="stop-scan-btn" class="btn-secondary"><i class="fa-solid fa-stop"></i> Parar Scanner</button>
-            </div>
-            <div id="reader"></div>
-            <div id="feedback">Aguardando operação...</div>
-        </div>
+  const saveIds = () => {
+    const ids = idInput.split('\n').map(id => id.trim()).filter(Boolean);
+    setState(prev => ({ ...prev, idsToFind: new Set(ids) }));
+    toast({ title: 'Lista de IDs salva com sucesso!' });
+  };
 
-        <div class="section" id="results-section">
-            <div id="progress-container">
-                <label id="progress-label">Progresso: 0 de 0</label>
-                <div id="progress-bar"><div id="progress-fill"></div></div>
-            </div>
-            <ul id="found-list"></ul>
-            <div class="button-group" style="margin-top: 1rem;">
-                <button id="export-btn" class="btn-success"><i class="fa-solid fa-file-csv"></i> Exportar Encontrados (CSV)</button>
-            </div>
-        </div>
-    </div>
+  const clearAll = () => {
+    setState(prev => ({ ...prev, idsToFind: new Set(), foundIds: new Map() }));
+    setIdInput('');
+    toast({ title: 'Dados limpos com sucesso!' });
+  };
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const App = {
-            // Gerenciamento de Estado
-            state: {
-                idsParaEncontrar: new Set(),
-                idsEncontrados: new Map(),
-                cameras: [],
-                scanner: null,
-                isScannerRunning: false,
-            },
+  const onScanSuccess = useCallback((decodedText: string) => {
+    if (!state.isScanning) return;
 
-            // Elementos do DOM
-            DOM: {
-                idInput: document.getElementById('id-input'),
-                saveBtn: document.getElementById('save-btn'),
-                clearBtn: document.getElementById('clear-btn'),
-                cameraSelect: document.getElementById('camera-select'),
-                startScanBtn: document.getElementById('start-scan-btn'),
-                stopScanBtn: document.getElementById('stop-scan-btn'),
-                reader: document.getElementById('reader'),
-                feedback: document.getElementById('feedback'),
-                progressLabel: document.getElementById('progress-label'),
-                progressFill: document.getElementById('progress-fill'),
-                foundList: document.getElementById('found-list'),
-                exportBtn: document.getElementById('export-btn'),
-            },
+    if (state.foundIds.has(decodedText)) {
+      setFeedback({ type: 'warning', message: `Já escaneado: ${decodedText}` });
+      playBeep('warning');
+    } else if (state.idsToFind.has(decodedText)) {
+      setState(prev => ({
+        ...prev,
+        foundIds: new Map(prev.foundIds).set(decodedText, new Date().toISOString())
+      }));
+      setFeedback({ type: 'success', message: `Encontrado: ${decodedText}` });
+      playBeep('success');
+      toast({ title: `Pacote encontrado: ${decodedText}` });
+    } else {
+      setFeedback({ type: 'error', message: `Inválido: ${decodedText}` });
+      playBeep('error');
+    }
+  }, [state.isScanning, state.foundIds, state.idsToFind, playBeep, toast]);
 
-            // Funções de Áudio
-            audioContext: new (window.AudioContext || window.webkitAudioContext)(),
-            playBeep(type) {
-                const oscillator = this.audioContext.createOscillator();
-                const gainNode = this.audioContext.createGain();
-                oscillator.connect(gainNode);
-                gainNode.connect(this.audioContext.destination);
-                
-                gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+  const startScanner = async () => {
+    if (!selectedCamera || !readerRef.current) {
+      setFeedback({ type: 'error', message: 'Nenhuma câmera selecionada.' });
+      return;
+    }
 
-                if (type === 'success') {
-                    oscillator.frequency.value = 800;
-                    oscillator.type = 'sine';
-                } else if (type === 'error') {
-                    oscillator.frequency.value = 400;
-                    oscillator.type = 'triangle';
-                } else if (type === 'warning') {
-                    oscillator.frequency.value = 600;
-                    oscillator.type = 'sawtooth';
-                }
-                
-                oscillator.start();
-                oscillator.stop(this.audioContext.currentTime + (type === 'error' ? 0.2 : 0.1));
-            },
+    try {
+      scannerRef.current = new Html5Qrcode('scanner-reader');
+      const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+      
+      await scannerRef.current.start(
+        selectedCamera,
+        config,
+        onScanSuccess,
+        (errorMessage) => console.warn(errorMessage)
+      );
 
-            // Métodos Principais
-            init() {
-                this.loadState();
-                this.bindEvents();
-                this.populateCameraSelect();
-                this.updateUI();
-                this.DOM.stopScanBtn.disabled = true;
-            },
+      setState(prev => ({ ...prev, isScanning: true }));
+      setFeedback({ type: 'success', message: 'Scanner iniciado. Aponte para um código.' });
+    } catch (error) {
+      console.error('Error starting scanner:', error);
+      setFeedback({ type: 'error', message: 'Falha ao iniciar a câmera.' });
+    }
+  };
 
-            bindEvents() {
-                this.DOM.saveBtn.addEventListener('click', () => this.saveIds());
-                this.DOM.clearBtn.addEventListener('click', () => this.clearAll());
-                this.DOM.startScanBtn.addEventListener('click', () => this.startScanner());
-                this.DOM.stopScanBtn.addEventListener('click', () => this.stopScanner());
-                this.DOM.exportBtn.addEventListener('click', () => this.exportToCSV());
-            },
+  const stopScanner = async () => {
+    if (!scannerRef.current || !state.isScanning) return;
 
-            saveState() {
-                const stateToSave = {
-                    idsParaEncontrar: Array.from(this.state.idsParaEncontrar),
-                    idsEncontrados: Array.from(this.state.idsEncontrados.entries())
-                };
-                localStorage.setItem('scannerProState', JSON.stringify(stateToSave));
-            },
+    try {
+      await scannerRef.current.stop();
+      setState(prev => ({ ...prev, isScanning: false }));
+      setFeedback({ type: 'warning', message: 'Scanner parado.' });
+      if (readerRef.current) {
+        readerRef.current.innerHTML = '';
+      }
+    } catch (error) {
+      console.error('Error stopping scanner:', error);
+    }
+  };
 
-            loadState() {
-                const savedState = localStorage.getItem('scannerProState');
-                if (savedState) {
-                    const parsedState = JSON.parse(savedState);
-                    this.state.idsParaEncontrar = new Set(parsedState.idsParaEncontrar);
-                    this.state.idsEncontrados = new Map(parsedState.idsEncontrados);
-                    this.DOM.idInput.value = Array.from(this.state.idsParaEncontrar).join('\n');
-                }
-            },
-            
-            saveIds() {
-                const ids = this.DOM.idInput.value.split('\n').map(id => id.trim()).filter(Boolean);
-                this.state.idsParaEncontrar = new Set(ids);
-                this.saveState();
-                this.updateUI();
-                alert('Lista de IDs salva com sucesso!');
-            },
-
-            clearAll() {
-                if (confirm('Tem certeza que deseja apagar a lista de IDs e todos os pacotes encontrados?')) {
-                    this.state.idsParaEncontrar.clear();
-                    this.state.idsEncontrados.clear();
-                    this.DOM.idInput.value = '';
-                    this.saveState();
-                    this.updateUI();
-                }
-            },
-
-            updateUI() {
-                const total = this.state.idsParaEncontrar.size;
-                const found = this.state.idsEncontrados.size;
-                
-                this.DOM.progressLabel.textContent = `Progresso: ${found} de ${total}`;
-                
-                const progressPercentage = total > 0 ? (found / total) * 100 : 0;
-                this.DOM.progressFill.style.width = `${progressPercentage}%`;
-
-                this.DOM.foundList.innerHTML = '';
-                this.state.idsEncontrados.forEach((timestamp, id) => {
-                    const li = document.createElement('li');
-                    const time = new Date(timestamp).toLocaleTimeString('pt-BR');
-                    li.innerHTML = `<span><i class="fa-solid fa-check" style="color: var(--success-color);"></i> ${id}</span> <small>${time}</small>`;
-                    this.DOM.foundList.prepend(li);
-                });
-                
-                this.DOM.exportBtn.disabled = found === 0;
-            },
-
-            showFeedback(type, message) {
-                const feedback = this.DOM.feedback;
-                feedback.textContent = message;
-                feedback.className = `feedback-${type}`;
-            },
-
-            async populateCameraSelect() {
-                try {
-                    const devices = await Html5Qrcode.getCameras();
-                    this.state.cameras = devices;
-                    if (devices && devices.length) {
-                        this.DOM.cameraSelect.innerHTML = '';
-                        devices.forEach(device => {
-                            const option = document.createElement('option');
-                            option.value = device.id;
-                            option.textContent = device.label || `Câmera ${this.DOM.cameraSelect.length + 1}`;
-                            this.DOM.cameraSelect.appendChild(option);
-                        });
-                        // Tenta pré-selecionar a câmera traseira
-                        const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
-                        if (backCamera) {
-                            this.DOM.cameraSelect.value = backCamera.id;
-                        }
-                    }
-                } catch (err) {
-                    console.error("Erro ao obter câmeras:", err);
-                    this.showFeedback('error', 'Não foi possível acessar as câmeras.');
-                }
-            },
-
-            startScanner() {
-                if (this.state.isScannerRunning) return;
-
-                const selectedCameraId = this.DOM.cameraSelect.value;
-                if (!selectedCameraId) {
-                    this.showFeedback('error', 'Nenhuma câmera selecionada.');
-                    return;
-                }
-
-                this.state.scanner = new Html5Qrcode('reader');
-                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                
-                this.state.scanner.start(selectedCameraId, config, 
-                    (decodedText) => this.onScanSuccess(decodedText),
-                    (errorMessage) => console.warn(errorMessage)
-                ).then(() => {
-                    this.state.isScannerRunning = true;
-                    this.DOM.startScanBtn.disabled = true;
-                    this.DOM.stopScanBtn.disabled = false;
-                    this.showFeedback('success', 'Scanner iniciado. Aponte para um código.');
-                }).catch(err => {
-                    console.error("Erro ao iniciar scanner:", err);
-                    this.showFeedback('error', 'Falha ao iniciar a câmera.');
-                });
-            },
-
-            stopScanner() {
-                if (!this.state.isScannerRunning || !this.state.scanner) return;
-                
-                this.state.scanner.stop().then(() => {
-                    this.state.isScannerRunning = false;
-                    this.DOM.startScanBtn.disabled = false;
-                    this.DOM.stopScanBtn.disabled = true;
-                    this.showFeedback('warning', 'Scanner parado.');
-                    this.DOM.reader.innerHTML = '';
-                }).catch(err => {
-                    console.error("Erro ao parar scanner:", err);
-                });
-            },
-            
-            onScanSuccess(decodedText) {
-                if (!this.state.isScannerRunning) return;
-
-                if (this.state.idsEncontrados.has(decodedText)) {
-                    this.showFeedback('warning', `Já escaneado: ${decodedText}`);
-                    this.playBeep('warning');
-                } else if (this.state.idsParaEncontrar.has(decodedText)) {
-                    this.state.idsEncontrados.set(decodedText, new Date().toISOString());
-                    this.showFeedback('success', `Encontrado: ${decodedText}`);
-                    this.playBeep('success');
-                    this.updateUI();
-                    this.saveState();
-                } else {
-                    this.showFeedback('error', `Inválido: ${decodedText}`);
-                    this.playBeep('error');
-                }
-            },
-
-            exportToCSV() {
-                let csvContent = "data:text/csv;charset=utf-8,ID_PACOTE,DATA_HORA_LEITURA\n";
-                this.state.idsEncontrados.forEach((timestamp, id) => {
-                    const date = new Date(timestamp);
-                    const formattedDate = `${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}`;
-                    csvContent += `${id},${formattedDate}\n`;
-                });
-
-                const encodedUri = encodeURI(csvContent);
-                const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", `inventario_encontrados_${new Date().toISOString().split('T')[0]}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-        };
-
-        App.init();
+  const exportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,ID_PACOTE,DATA_HORA_LEITURA\n";
+    state.foundIds.forEach((timestamp, id) => {
+      const date = new Date(timestamp);
+      const formattedDate = `${date.toLocaleDateString('pt-BR')} ${date.toLocaleTimeString('pt-BR')}`;
+      csvContent += `${id},${formattedDate}\n`;
     });
-    </script>
-</body>
-</html>
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `inventario_encontrados_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: 'Arquivo CSV exportado com sucesso!' });
+  };
+
+  // Save state when it changes
+  useEffect(() => {
+    saveState();
+  }, [saveState]);
+
+  const progress = state.idsToFind.size > 0 ? (state.foundIds.size / state.idsToFind.size) * 100 : 0;
+
+  return (
+    <div className="min-h-screen bg-background p-4">
+      <div className="max-w-2xl mx-auto space-y-6">
+        {/* Header */}
+        <Card className="p-6">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold flex items-center justify-center gap-2">
+              <Barcode className="h-6 w-6" />
+              Scanner de Inventário Pro
+            </h1>
+          </div>
+        </Card>
+
+        {/* Setup Section */}
+        <Card className="p-6">
+          <div className="space-y-4">
+            <label className="text-sm font-medium">
+              Cole os IDs a encontrar (um por linha):
+            </label>
+            <Textarea
+              value={idInput}
+              onChange={(e) => setIdInput(e.target.value)}
+              placeholder="ID-PACOTE-001&#10;ID-PACOTE-002"
+              className="min-h-[100px]"
+            />
+            <div className="flex gap-2">
+              <Button onClick={saveIds} className="flex-1">
+                <Save className="h-4 w-4 mr-2" />
+                Salvar Lista
+              </Button>
+              <Button onClick={clearAll} variant="secondary" className="flex-1">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Limpar Tudo
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Scanner Section */}
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Câmera:</label>
+              <Select value={selectedCamera} onValueChange={setSelectedCamera}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma câmera" />
+                </SelectTrigger>
+                <SelectContent>
+                  {state.cameras.map((camera) => (
+                    <SelectItem key={camera.id} value={camera.id}>
+                      {camera.label || `Câmera ${camera.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                onClick={startScanner} 
+                disabled={state.isScanning || !selectedCamera}
+                className="flex-1"
+              >
+                <Camera className="h-4 w-4 mr-2" />
+                Iniciar Scanner
+              </Button>
+              <Button 
+                onClick={stopScanner} 
+                disabled={!state.isScanning}
+                variant="secondary"
+                className="flex-1"
+              >
+                <Square className="h-4 w-4 mr-2" />
+                Parar Scanner
+              </Button>
+            </div>
+
+            <div 
+              id="scanner-reader" 
+              ref={readerRef}
+              className="w-full aspect-square border rounded-lg overflow-hidden bg-card"
+            />
+
+            <div className={`p-4 rounded-lg text-center font-medium ${
+              feedback.type === 'success' ? 'bg-success text-success-foreground' :
+              feedback.type === 'error' ? 'bg-destructive text-destructive-foreground' :
+              feedback.type === 'warning' ? 'bg-warning text-warning-foreground' :
+              'bg-muted text-muted-foreground'
+            }`}>
+              {feedback.message}
+            </div>
+          </div>
+        </Card>
+
+        {/* Results Section */}
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">
+                Progresso: {state.foundIds.size} de {state.idsToFind.size}
+              </label>
+              <Progress value={progress} className="mt-2" />
+            </div>
+
+            <div className="max-h-48 overflow-y-auto space-y-2">
+              {Array.from(state.foundIds.entries()).reverse().map(([id, timestamp]) => {
+                const time = new Date(timestamp).toLocaleTimeString('pt-BR');
+                return (
+                  <div key={id} className="flex justify-between items-center p-2 bg-muted rounded">
+                    <span className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-success" />
+                      {id}
+                    </span>
+                    <small className="text-muted-foreground">{time}</small>
+                  </div>
+                );
+              })}
+            </div>
+
+            <Button 
+              onClick={exportToCSV} 
+              disabled={state.foundIds.size === 0}
+              className="w-full"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Exportar Encontrados (CSV)
+            </Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
