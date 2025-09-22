@@ -3,256 +3,232 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner de Inventário Pro</title>
-    <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Scanner Rápido</title>
+    <!-- Ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
-        /* Pequenos ajustes para replicar o visual shadcn/ui */
-        body { background-color: #f8fafc; }
-        .card { background-color: white; border-radius: 0.75rem; border: 1px solid #e2e8f0; padding: 1.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
-        .btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 0.5rem; font-weight: 500; padding: 0.5rem 1rem; transition: background-color 0.2s; }
-        .btn-primary { background-color: #1a202c; color: white; }
-        .btn-primary:hover { background-color: #334155; }
-        .btn-secondary { background-color: #f1f5f9; color: #1a202c; border: 1px solid #e2e8f0; }
-        .btn-secondary:hover { background-color: #e2e8f0; }
-        button:disabled { background-color: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
-        .feedback { padding: 1rem; border-radius: 0.5rem; text-align: center; font-weight: 500; }
-        .feedback-success { background-color: #dcfce7; color: #166534; }
-        .feedback-error { background-color: #fee2e2; color: #991b1b; }
-        .feedback-warning { background-color: #fef3c7; color: #92400e; }
-        .feedback-info { background-color: #e0e7ff; color: #3730a3; }
+        :root {
+            --cor-fundo: #121212;
+            --cor-fundo-card: #1E1E1E;
+            --cor-primaria: #FFC107; /* Amarelo */
+            --cor-primaria-hover: #FFA000;
+            --cor-sucesso: #28a745; /* Verde para feedback */
+            --cor-erro: #dc3545; /* Vermelho para feedback */
+            --cor-texto: #E0E0E0;
+            --cor-texto-botao: #121212;
+            --cor-borda: #424242;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 1rem;
+            background-color: var(--cor-fundo);
+            color: var(--cor-texto);
+            transition: background-color 0.2s ease-in-out;
+        }
+        /* ESTILOS PARA O FEEDBACK DE TELA CHEIA */
+        body.feedback-sucesso { background-color: var(--cor-sucesso); }
+        body.feedback-erro { background-color: var(--cor-erro); }
+        .container {
+            max-width: 500px; margin: 0 auto; background-color: var(--cor-fundo-card);
+            padding: 1.5rem; border-radius: 12px; border: 1px solid var(--cor-borda);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        }
+        h1 { text-align: center; margin-top: 0; color: var(--cor-primaria); }
+        .secao { margin-bottom: 2rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #BDBDBD;}
+        textarea {
+            width: 100%; min-height: 120px; padding: 0.75rem; border: 1px solid var(--cor-borda);
+            border-radius: 4px; font-size: 1rem; box-sizing: border-box; background-color: var(--cor-fundo);
+            color: var(--cor-texto);
+        }
+        textarea:focus {
+            outline: none; border-color: var(--cor-primaria);
+            box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.5);
+        }
+        button {
+            display: block; width: 100%; padding: 0.75rem; font-size: 1.1rem;
+            font-weight: 600; color: var(--cor-texto-botao); background-color: var(--cor-primaria);
+            border: none; border-radius: 4px; cursor: pointer; margin-top: 1rem;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: var(--cor-primaria-hover); }
+        button:disabled { background-color: #424242; color: #757575; cursor: not-allowed; }
+        #leitor-container {
+            width: 100%; border: 2px solid var(--cor-borda); border-radius: 4px;
+            overflow: hidden; position: relative;
+        }
+        #leitor { width: 100%; display: block; }
+        #feedback-texto { text-align: center; font-weight: bold; font-size: 1.2rem; margin-top: 1rem; height: 30px;}
+        
+        /* NOVOS ESTILOS PARA PROGRESSO E LISTA */
+        #progresso-container { margin-bottom: 1rem; }
+        #progresso-texto { font-size: 1.2rem; font-weight: bold; text-align: center; color: var(--cor-primaria); }
+        #lista-container {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--cor-borda);
+            border-radius: 4px;
+            padding: 0.5rem;
+            margin-top: 1rem;
+        }
+        #lista-ids { list-style: none; padding: 0; margin: 0; }
+        #lista-ids li {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--cor-borda);
+            transition: all 0.3s ease;
+        }
+        #lista-ids li:last-child { border-bottom: none; }
+        #lista-ids li.encontrado {
+            color: var(--cor-sucesso);
+            font-weight: bold;
+            text-decoration: line-through;
+        }
     </style>
 </head>
-<body class="p-4">
-    <div class="max-w-2xl mx-auto space-y-6">
-        <div class="card text-center">
-            <h1 class="text-2xl font-bold flex items-center justify-center gap-2">
-                <i class="fa-solid fa-barcode"></i> Scanner de Inventário Pro
-            </h1>
+<body>
+
+    <div class="container">
+        <h1><i class="fa-solid fa-barcode"></i> Scanner de Pacotes</h1>
+
+        <div class="secao">
+            <label for="ids-input">1. Cole os IDs (um por linha):</label>
+            <textarea id="ids-input" placeholder="PACOTE-001&#10;PACOTE-002&#10;PACOTE-003"></textarea>
+            <button id="carregar-btn">Carregar IDs e Iniciar</button>
         </div>
 
-        <div class="card space-y-4">
-            <label for="id-input" class="text-sm font-medium">Cole os IDs a encontrar (um por linha):</label>
-            <textarea id="id-input" placeholder="ID-PACOTE-001&#10;ID-PACOTE-002" class="w-full min-h-[100px] border rounded-md p-2"></textarea>
-            <div class="flex gap-2">
-                <button id="save-btn" class="btn btn-primary w-full"><i class="fa-solid fa-save mr-2"></i> Salvar Lista</button>
-                <button id="clear-btn" class="btn btn-secondary w-full"><i class="fa-solid fa-trash-2 mr-2"></i> Limpar Tudo</button>
+        <div class="secao">
+            <label>2. Escaneamento em Tempo Real</label>
+            <div id="leitor-container">
+                <div id="leitor"></div>
             </div>
+            <div id="feedback-texto">Aguardando leitura...</div>
+            <button id="parar-btn" disabled>Parar Câmera</button>
         </div>
-
-        <div class="card space-y-4">
-            <div>
-                <label for="camera-select" class="text-sm font-medium mb-2 block">Câmera:</label>
-                <select id="camera-select" class="w-full border rounded-md p-2"></select>
+        
+        <!-- NOVA SEÇÃO DE PROGRESSO -->
+        <div class="secao">
+            <div id="progresso-container">
+                <div id="progresso-texto">Progresso: 0 de 0</div>
             </div>
-            <div class="flex gap-2">
-                <button id="start-scan-btn" class="btn btn-primary w-full"><i class="fa-solid fa-camera mr-2"></i> Iniciar Scanner</button>
-                <button id="stop-scan-btn" class="btn btn-secondary w-full"><i class="fa-solid fa-square mr-2"></i> Parar Scanner</button>
+            <label>Lista de Tarefas:</label>
+            <div id="lista-container">
+                <ul id="lista-ids">
+                    <li>Nenhuma lista carregada.</li>
+                </ul>
             </div>
-            <div id="scanner-reader" class="w-full aspect-square border rounded-lg overflow-hidden bg-gray-100"></div>
-            <div id="feedback-box" class="feedback feedback-info">Aguardando operação...</div>
-        </div>
-
-        <div class="card space-y-4">
-            <div>
-                <label id="progress-label" class="text-sm font-medium">Progresso: 0 de 0</label>
-                <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                    <div id="progress-bar" class="bg-green-600 h-2.5 rounded-full" style="width: 0%; transition: width 0.3s;"></div>
-                </div>
-            </div>
-            <div id="found-list" class="max-h-48 overflow-y-auto space-y-2"></div>
-            <button id="export-btn" class="btn btn-primary w-full bg-green-700 hover:bg-green-800">
-                <i class="fa-solid fa-file-csv mr-2"></i> Exportar Encontrados (CSV)
-            </button>
         </div>
     </div>
 
+<!-- A biblioteca do scanner DEVE ser carregada antes do script que a utiliza -->
+<script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const App = {
-        state: {
-            idsToFind: new Set(),
-            foundIds: new Map(),
-            cameras: [],
-            scanner: null,
-            isScanning: false,
-        },
-        DOM: { /* Preenchido no init */ },
-        audioContext: new (window.AudioContext || window.webkitAudioContext)(),
+    const idsInput = document.getElementById('ids-input');
+    const carregarBtn = document.getElementById('carregar-btn');
+    const pararBtn = document.getElementById('parar-btn');
+    const feedbackTexto = document.getElementById('feedback-texto');
+    const progressoTexto = document.getElementById('progresso-texto');
+    const listaIdsUL = document.getElementById('lista-ids');
+    const leitorDivId = 'leitor';
+    
+    let html5QrCode = null;
+    let idsParaEncontrar = new Set();
+    let idsEncontrados = new Set(); // NOVO: Guarda os IDs já encontrados
+    let feedbackTimeout = null;
 
-        init() {
-            this.DOM = {
-                idInput: document.getElementById('id-input'),
-                saveBtn: document.getElementById('save-btn'),
-                clearBtn: document.getElementById('clear-btn'),
-                cameraSelect: document.getElementById('camera-select'),
-                startScanBtn: document.getElementById('start-scan-btn'),
-                stopScanBtn: document.getElementById('stop-scan-btn'),
-                reader: document.getElementById('scanner-reader'),
-                feedbackBox: document.getElementById('feedback-box'),
-                progressLabel: document.getElementById('progress-label'),
-                progressBar: document.getElementById('progress-bar'),
-                foundList: document.getElementById('found-list'),
-                exportBtn: document.getElementById('export-btn'),
-            };
-            this.loadState();
-            this.bindEvents();
-            this.populateCameraSelect();
-            this.updateUI();
-        },
+    function carregarIds() {
+        const ids = idsInput.value.split('\n').map(id => id.trim()).filter(id => id);
+        idsParaEncontrar = new Set(ids);
+        idsEncontrados.clear(); // Limpa a contagem anterior
 
-        bindEvents() {
-            this.DOM.saveBtn.addEventListener('click', () => this.saveIds());
-            this.DOM.clearBtn.addEventListener('click', () => this.clearAll());
-            this.DOM.startScanBtn.addEventListener('click', () => this.startScanner());
-            this.DOM.stopScanBtn.addEventListener('click', () => this.stopScanner());
-            this.DOM.exportBtn.addEventListener('click', () => this.exportToCSV());
-        },
+        if (ids.length > 0) {
+            atualizarProgressoELista();
+            iniciarScanner();
+        } else {
+            alert("Por favor, insira pelo menos um ID.");
+        }
+    }
 
-        playBeep(type) { /* ... (código do bip omitido para brevidade, mas funciona igual) ... */ },
-
-        loadState() {
-            const savedState = localStorage.getItem('inventoryScannerStateHTML');
-            if (savedState) {
-                const parsed = JSON.parse(savedState);
-                this.state.idsToFind = new Set(parsed.idsToFind);
-                this.state.foundIds = new Map(parsed.foundIds);
-                this.DOM.idInput.value = parsed.idsToFind.join('\n');
-            }
-        },
-
-        saveState() {
-            const stateToSave = {
-                idsToFind: Array.from(this.state.idsToFind),
-                foundIds: Array.from(this.state.foundIds.entries())
-            };
-            localStorage.setItem('inventoryScannerStateHTML', JSON.stringify(stateToSave));
-        },
-
-        saveIds() {
-            const ids = this.DOM.idInput.value.split('\n').map(id => id.trim()).filter(Boolean);
-            this.state.idsToFind = new Set(ids);
-            this.updateUI();
-            this.saveState();
-            alert('Lista salva com sucesso!');
-        },
-
-        clearAll() {
-            if (confirm('Limpar todos os dados?')) {
-                this.state.idsToFind.clear();
-                this.state.foundIds.clear();
-                this.DOM.idInput.value = '';
-                this.updateUI();
-                this.saveState();
-            }
-        },
-
-        updateUI() {
-            const total = this.state.idsToFind.size;
-            const found = this.state.foundIds.size;
-            const progress = total > 0 ? (found / total) * 100 : 0;
-
-            this.DOM.progressLabel.textContent = `Progresso: ${found} de ${total}`;
-            this.DOM.progressBar.style.width = `${progress}%`;
-
-            this.DOM.foundList.innerHTML = '';
-            Array.from(this.state.foundIds.entries()).reverse().forEach(([id, timestamp]) => {
-                const time = new Date(timestamp).toLocaleTimeString('pt-BR');
-                const itemDiv = document.createElement('div');
-                itemDiv.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
-                itemDiv.innerHTML = `
-                    <span class="flex items-center gap-2 font-medium text-gray-800">
-                        <i class="fa-solid fa-check text-green-600"></i> ${id}
-                    </span>
-                    <small class="text-gray-500">${time}</small>
-                `;
-                this.DOM.foundList.appendChild(itemDiv);
-            });
-            
-            this.DOM.startScanBtn.disabled = this.state.isScanning;
-            this.DOM.stopScanBtn.disabled = !this.state.isScanning;
-            this.DOM.exportBtn.disabled = found === 0;
-        },
-
-        showFeedback(type, message) {
-            this.DOM.feedbackBox.textContent = message;
-            this.DOM.feedbackBox.className = `feedback feedback-${type}`;
-        },
-
-        async populateCameraSelect() { /* ... (código omitido, funciona igual) ... */ },
-        startScanner() { /* ... (código omitido, funciona igual) ... */ },
-        stopScanner() { /* ... (código omitido, funciona igual) ... */ },
-        onScanSuccess(decodedText) { /* ... (código omitido, funciona igual) ... */ },
-        exportToCSV() { /* ... (código omitido, funciona igual) ... */ }
-    };
-
-    // Para manter o código mais limpo, as funções completas que não mudaram foram omitidas aqui, mas estão no código final que você deve copiar.
-    // O código completo para as funções omitidas está abaixo para referência.
-    App.playBeep = function(type) {
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        if (type === 'success') { oscillator.frequency.value = 800; oscillator.type = 'sine'; }
-        else if (type === 'error') { oscillator.frequency.value = 400; oscillator.type = 'triangle'; }
-        else if (type === 'warning') { oscillator.frequency.value = 600; oscillator.type = 'sawtooth'; }
-        oscillator.start();
-        oscillator.stop(this.audioContext.currentTime + (type === 'error' ? 0.2 : 0.1));
-    };
-    App.populateCameraSelect = async function() {
-        try {
-            const devices = await Html5Qrcode.getCameras(); this.state.cameras = devices;
+    function iniciarScanner() {
+        if (!html5QrCode) html5QrCode = new Html5Qrcode(leitorDivId);
+        
+        Html5Qrcode.getCameras().then(devices => {
             if (devices && devices.length) {
-                this.DOM.cameraSelect.innerHTML = '';
-                devices.forEach(device => {
-                    const option = document.createElement('option');
-                    option.value = device.id; option.textContent = device.label || `Câmera ${this.DOM.cameraSelect.length + 1}`;
-                    this.DOM.cameraSelect.appendChild(option);
-                });
-                const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
-                if (backCamera) this.DOM.cameraSelect.value = backCamera.id;
-            }
-        } catch (err) { console.error("Erro ao obter câmeras:", err); this.showFeedback('error', 'Não foi possível acessar as câmeras.'); }
-    };
-    App.startScanner = function() {
-        if (this.state.isScanning) return;
-        const selectedCameraId = this.DOM.cameraSelect.value;
-        if (!selectedCameraId) { this.showFeedback('error', 'Nenhuma câmera selecionada.'); return; }
-        this.state.scanner = new Html5Qrcode('scanner-reader');
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-        this.state.scanner.start(selectedCameraId, config, (decodedText) => this.onScanSuccess(decodedText), (errorMessage) => {})
-        .then(() => { this.state.isScanning = true; this.updateUI(); this.showFeedback('success', 'Scanner iniciado.'); })
-        .catch(err => { console.error("Error starting scanner:", err); this.showFeedback('error', 'Falha ao iniciar a câmera.'); });
-    };
-    App.stopScanner = function() {
-        if (!this.state.isScanning || !this.state.scanner) return;
-        this.state.scanner.stop().then(() => {
-            this.state.isScanning = false; this.updateUI(); this.showFeedback('warning', 'Scanner parado.'); this.DOM.reader.innerHTML = '';
-        }).catch(err => console.error("Error stopping scanner:", err));
-    };
-    App.onScanSuccess = function(decodedText) {
-        if (!this.state.isScanning) return;
-        if (this.state.foundIds.has(decodedText)) { this.showFeedback('warning', `Já escaneado: ${decodedText}`); this.playBeep('warning'); }
-        else if (this.state.idsToFind.has(decodedText)) {
-            this.state.foundIds.set(decodedText, new Date().toISOString()); this.showFeedback('success', `Encontrado: ${decodedText}`); this.playBeep('success'); this.updateUI(); this.saveState();
-        } else { this.showFeedback('error', `Inválido: ${decodedText}`); this.playBeep('error'); }
-    };
-    App.exportToCSV = function() {
-        let csvContent = "data:text/csv;charset=utf-8,ID_PACOTE,DATA_HORA_LEITURA\n";
-        this.state.foundIds.forEach((timestamp, id) => {
-            const formattedDate = new Date(timestamp).toLocaleString('pt-BR');
-            csvContent += `${id},"${formattedDate}"\n`;
-        });
-        const link = document.createElement("a");
-        link.setAttribute("href", encodeURI(csvContent));
-        link.setAttribute("download", `inventario_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    };
+                const cameraId = devices[devices.length - 1].id;
+                html5QrCode.start(cameraId, { fps: 10, qrbox: { width: 250, height: 250 } },
+                    (decodedText) => onScanSuccess(decodedText),
+                    (errorMessage) => {})
+                .then(() => {
+                    carregarBtn.disabled = true;
+                    pararBtn.disabled = false;
+                    idsInput.disabled = true;
+                    feedbackTexto.textContent = "Câmera ativa!";
+                })
+                .catch(err => alert("Erro ao iniciar a câmera. Verifique as permissões e se está usando HTTPS."));
+            } else { alert("Nenhuma câmera encontrada."); }
+        }).catch(err => alert("Erro ao acessar as câmeras."));
+    }
 
-    App.init();
+    function pararScanner() {
+        if (html5QrCode && html5QrCode.isScanning) {
+            html5QrCode.stop().then(() => {
+                carregarBtn.disabled = false;
+                pararBtn.disabled = true;
+                idsInput.disabled = false;
+                feedbackTexto.textContent = "Câmera parada.";
+            }).catch(err => console.error("Falha ao parar a câmera.", err));
+        }
+    }
+
+    function onScanSuccess(codigoLido) {
+        if (feedbackTimeout) return;
+        
+        // Verifica se o ID está na lista E se ainda não foi encontrado
+        if (idsParaEncontrar.has(codigoLido) && !idsEncontrados.has(codigoLido)) {
+            idsEncontrados.add(codigoLido);
+            feedbackTexto.textContent = `✅ ENCONTRADO: ${codigoLido}`;
+            mostrarFeedback(true);
+            atualizarProgressoELista(); // Atualiza a lista visual
+        } else if (!idsParaEncontrar.has(codigoLido)) {
+            feedbackTexto.textContent = `❌ INVÁLIDO: ${codigoLido}`;
+            mostrarFeedback(false);
+        }
+        // Se já foi encontrado, não faz nada para manter o fluxo rápido
+    }
+    
+    // NOVO: Atualiza o contador de progresso e a lista visual
+    function atualizarProgressoELista() {
+        progressoTexto.textContent = `Progresso: ${idsEncontrados.size} de ${idsParaEncontrar.size}`;
+        
+        listaIdsUL.innerHTML = '';
+        idsParaEncontrar.forEach(id => {
+            const li = document.createElement('li');
+            li.textContent = id;
+            li.id = `item-${id}`; // Adiciona um ID para fácil acesso
+            if (idsEncontrados.has(id)) {
+                li.className = 'encontrado';
+                li.innerHTML = `<i class="fa-solid fa-check"></i> ${id}`;
+            }
+            listaIdsUL.appendChild(li);
+        });
+    }
+
+    function mostrarFeedback(isSuccess) {
+        if (isSuccess && navigator.vibrate) navigator.vibrate(200);
+        const feedbackClass = isSuccess ? 'feedback-sucesso' : 'feedback-erro';
+        document.body.classList.add(feedbackClass);
+        feedbackTimeout = setTimeout(() => {
+            document.body.classList.remove(feedbackClass);
+            feedbackTimeout = null;
+        }, 1500);
+    }
+
+    carregarBtn.addEventListener('click', carregarIds);
+    pararBtn.addEventListener('click', pararScanner);
 });
 </script>
+
 </body>
 </html>
+
